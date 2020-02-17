@@ -7,7 +7,8 @@ This script is based on work done by:
 3. And my own research on flashing procedures used by the original WCH programing software. 
 
 ### Script is still in testing phase, please report any issues. More testing and any constructive input will be very welcomed.  
-Logging is not implemented for Bootloader v.1.1. 
+Logging is not implemented for Bootloader v.1.1.  
+
 ___
 ## Requirements:  
 1. python3 installed and in PATH
@@ -33,6 +34,11 @@ optional arguments:
   -s, --start_app       Reset and start application.
   --log LOG             Log usb opeations to file.
 ```
+On Linux if you make the script executable:  
+```chmod +x chflasher.py```  
+you can omit the _python3_ command and run the srcipt directly.  
+
+
 ___
 ## Examples:
 

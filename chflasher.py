@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 # this tool can flash the CH55x series with bootloader version 1.1 and 2.31
 # usage:
