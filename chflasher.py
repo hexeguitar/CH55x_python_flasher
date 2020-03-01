@@ -445,10 +445,9 @@ class CHflasher:
             # copy the bin data
             for x in range(pkt_length):
                 outbuffer[x+8] = input_file[curr_addr + x]
-            # ensure the bin image size is
+            # ensure the bin image size is on 8 byte boundary
             while pkt_length % 8:
                 pkt_length = pkt_length + 1
-                outbuffer[pkt_length + 8] = 0x00        # fill with 0 up to 8 byte boundary
             outbuffer[1] = (pkt_length + 5)             # update the packet length
             # xor the whole 0x38 long area with the bootkey
             for x in range(0x38):
