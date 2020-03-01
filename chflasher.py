@@ -174,19 +174,25 @@ class CHflasher:
 
     def __print_buffers(self, tx, rx):
         txl = len(tx)
-        rxl = len(rx)
-        length = max(len(tx), len(rx))
+        if type(rx) is list:
+            rxl = len(rx)
+        else:
+            rxl = 0
         print("add= " + '|'.join('{:02x}'.format(x) for x in range(max(txl, rxl))),
               file=self.log_file)
         if txl:
             print("tx = " + ':'.join('{:02x}'.format(x) for x in tx), file=self.log_file)
         if rxl:
             print("rx = " + ':'.join('{:02x}'.format(x) for x in rx), file=self.log_file)
+        else:
+            print("rx = " + str(rx), file=self.log_file)
 
     # better formatting for visual inspection
     def __print_buffer_errors(self, bindata, tx, rx, address):
         if rx[4] != 0x00:
             msg = "ERR"
+        elif rx[4] == 0xfe:
+            msg = "BUG"
         else:
             msg = "OK "
         print('bin data' + ' '*44 + ':'.join('{:02x}'.format(x) for x in bindata), file=self.log_file)
@@ -281,11 +287,13 @@ class CHflasher:
 
     def __exitbootloaderv2(self):
         print("Starting application...")
-        self.epout.write(self.chip_v2["exit_bootloader"])
+        reply = self.epout.write(self.chip_v2["exit_bootloader"])
+        if reply is None:
+            reply = ""
         if self.log_file is not None:
             print(self.txt_sep, file=self.log_file)
             print("Starting application:", file=self.log_file)
-            self.__print_buffers(self.chip_v2["exit_bootloader"], "")
+            self.__print_buffers(self.chip_v2["exit_bootloader"], reply)
 
     def __identchipv1(self):
         reply = self.__sendcmd(self.chip_v1["detect_seq"])
@@ -419,12 +427,13 @@ class CHflasher:
             self.__errorexit('Firmware bin file possibly corrupt.')
         curr_addr = 0
         pkt_length = 0
-        while curr_addr < bytes_to_send:
+        while curr_addr < len(input_file):
             outbuffer = bytearray(64)
             if bytes_to_send >= 0x38:
                 pkt_length = 0x38
             else:
                 pkt_length = bytes_to_send
+
             outbuffer[0] = mode
             outbuffer[1] = (pkt_length+5)
             outbuffer[2] = 0x00
@@ -433,9 +442,18 @@ class CHflasher:
             outbuffer[5] = 0x00
             outbuffer[6] = 0x00
             outbuffer[7] = bytes_to_send & 0xff
-
+            # copy the bin data
             for x in range(pkt_length):
-                outbuffer[x+8] = input_file[curr_addr + x] ^ self.bootkey[x & 0x07]
+                outbuffer[x+8] = input_file[curr_addr + x]
+            # ensure the bin image size is
+            while pkt_length % 8:
+                pkt_length = pkt_length + 1
+                outbuffer[pkt_length + 8] = 0x00        # fill with 0 up to 8 byte boundary
+            outbuffer[1] = (pkt_length + 5)             # update the packet length
+            # xor the whole 0x38 long area with the bootkey
+            for x in range(0x38):
+                outbuffer[x + 8] = outbuffer[x+8] ^ self.bootkey[x & 0x07]
+
             buffer = self.__sendcmd(outbuffer)
             # --- logger ---
             if self.log_file is not None:
