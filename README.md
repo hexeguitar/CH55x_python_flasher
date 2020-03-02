@@ -5,8 +5,15 @@ This script is based on work done by:
 1. Aaron Christophel: https://github.com/atc1441/chflasher  
 2. Guys at mikrokontroller.net forum (reverse engineering the bootloader)  
 3. And my own research on flashing procedures used by the original WCH programing software. 
-
-### Script is still in testing phase, please report any issues. More testing and any constructive input will be very welcomed.  
+___
+### 03.2020 UPDATE:  
+Script succesfully tested with CH559 and CH554 MCUs, writing and verifying works without errors.  
+___
+### TODO:
+1. Implement programming via UART.
+2. Test more MCUs.   
+3. Test version 1 of the bootloader.  
+    
 Logging is not implemented for Bootloader v.1.1.  
 
 ___
