@@ -376,12 +376,12 @@ class CHflasher:
 
     def __writefilev1(self, file_name, mode):
         input_file = list(open(file_name, 'rb').read())
-        bytes_to_send = os.path.getsize(bytes(input_file))
+        bytes_to_send = len(input_file)
         if mode == self.chip_v1["mode_write"]:
             print('Filesize: '+str(bytes_to_send)+' bytes')
         curr_addr = 0
         pkt_length = 0
-        while curr_addr < bytes_to_send:
+        while curr_addr < len(input_file):
             outbuffer = bytearray(64)
             if bytes_to_send >= 0x3c:
                 pkt_length = 0x3c
