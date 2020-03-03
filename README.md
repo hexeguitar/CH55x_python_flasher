@@ -7,7 +7,10 @@ This script is based on work done by:
 3. And my own research on flashing procedures used by the original WCH programing software. 
 ___
 ### 03.2020 UPDATE:  
-Script succesfully tested with CH559 and CH554 MCUs, writing and verifying works without errors.  
+Succesfull tests:
+- CH559, CH554 using bootloader v. 2.31
+- CH551 using bootloader v. 1.1
+
 ___
 ### TODO:
 1. Implement programming via UART.
