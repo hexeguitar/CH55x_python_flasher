@@ -38,13 +38,11 @@
 #    new log file with all the usb operations logged.
 # 6. Changed the bootkey generator to work as (almost) in the original WCH app
 # 7. Fixed the flash verify issue for larger bin files
-#
-# Planned new features:
-# 1. Adding flashing via UART with port select option
 
 
 import usb.core
 import usb.util
+import serial
 import sys
 import os
 import argparse
@@ -55,12 +53,12 @@ from time import localtime, strftime, sleep
 
 
 class CHflasher:
-
     chip_v1 = {
         "detect_seq": (
             0xa2, 0x13, 0x55, 0x53, 0x42, 0x20, 0x44, 0x42, 0x47, 0x20, 0x43, 0x48, 0x35, 0x35, 0x39,
             0x20, 0x26, 0x20, 0x49, 0x53, 0x50, 0x00),
         "exit_bootloader": (0xa5, 0x02, 0x01, 0x00),
+        "erase_flash": (0xa6, 0x04, 0x00, 0x00, 0x00, 0x00),
         "mode_write": 0xa8,
         "mode_verify": 0xa7
     }
@@ -76,15 +74,18 @@ class CHflasher:
                       0x4e, 0x00, 0x00)
     }
     txt_sep = '---------------------------------------------------------------------------------'
-    version = '2.0'
+    version = '2.1'
 
     device_erase_size = 8
     device_flash_size = 16
     chipid = 0
     log_file = None
     bootloader_ver = None
-    bootkey = [0] * 8       # bootkey placeholder
+    bootkey = [0] * 8  # bootkey placeholder
     usb_init_done = False
+    serial_init_done = False
+    upload_port = "usb"
+    serial_baud = 57600
 
     def __init__(self):
         pass
@@ -130,10 +131,43 @@ class CHflasher:
         assert self.epin is not None
         self.usb_init_done = True
 
+    def __init_serial(self, port):
+        if self.serial_init_done:
+            return
+        self.ser = serial.Serial(timeout=0.15)
+        self.ser.port = port
+        self.ser.baudrate = self.serial_baud
+        self.ser.open()
+        if self.ser.is_open:
+            self.upload_port = self.ser.name
+            print("Port " + self.ser.name + " " + str(self.serial_baud) + " baud open.")
+            print("Attempting to start the bootloader via the DTR line...")
+            sleep(0.01)
+            self.ser.dtr = True
+            sleep(0.15)
+            self.ser.dtr = False
+            sleep(0.1)
+
+            self.ser.dsrdtr = False  # disable
+        else:
+            self.__errorexit("Serial port not found.")
+
+    def init_port(self, port="usb"):
+        if port == "usb":
+            self.__init_usb()
+        else:  # using serial port
+            self.__init_serial(port)
+            self.upload_port = port
+
+    def close_port(self):
+        if self.upload_port != "usb" and self.ser.is_open:
+            self.ser.close()
+            print("Closing " + self.ser.name + " port.")
+
     def set_logger(self, setting, logfile):
         if setting:
             print("Transaction logger ON: " + logfile)
-            self.log_file = open(logfile, "w")        # open log file for writing
+            self.log_file = open(logfile, "w")  # open log file for writing
             print(self.txt_sep, file=self.log_file)
             time = strftime("%a, %d %b %Y %X +0000", localtime())
             print(time, file=self.log_file)
@@ -141,14 +175,14 @@ class CHflasher:
 
     def close_logger(self):
         if self.log_file is not None:
-            self.log_file.close();
+            self.log_file.close()
 
     @classmethod
     def show_info(cls):
         print(cls.txt_sep)
         print("CH55x USB bootloader flash tool, version " + cls.version)
-        print("Copyright 2020 by https://ATCnetz.de (Aaron Christophel)")
-        print("Rewritten and upgraded by Piotr Zapart www.hexefx.com")
+        print("Based on work by https://ATCnetz.de (Aaron Christophel)")
+        print("Copyright 2020 by Piotr Zapart www.hexefx.com")
         print("Supported chips: CH551, CH552, CH554, CH558 and CH559")
         print(cls.txt_sep)
 
@@ -157,7 +191,7 @@ class CHflasher:
 
     example_text = '''--------------------------------------------------------------------------------
     Examples:
-
+    using USB (default):
     python3 chflasher.py -w -f blink.bin 
     \t\twill write, verify the blink bin file and exit the bootloader
     
@@ -170,11 +204,18 @@ class CHflasher:
     python3 chflasher.py -e
     \t\twill erase the flash
     
+    using UART:
+    python3 chflasher.py -p /dev/ttyUSB0 -w -f blink.bin 
+    \t\twill write, verify the blink bin file using ttyUSB0 serial port and exit the bootloader
+    
+    python3 chflasher.py -p COM4 -w -f blink.bin --log write.log
+    \t\twill do the same as above using COM4 port, but also record all operations in the new write.log file
+        
     '''
 
     def __print_buffers(self, tx, rx):
         txl = len(tx)
-        if type(rx) is list:
+        if type(rx) is not int:
             rxl = len(rx)
         else:
             rxl = 0
@@ -195,11 +236,16 @@ class CHflasher:
             msg = "BUG"
         else:
             msg = "OK "
-        print('bin data' + ' '*44 + ':'.join('{:02x}'.format(x) for x in bindata), file=self.log_file)
+        print('bin data' + ' ' * 44 + ':'.join('{:02x}'.format(x) for x in bindata), file=self.log_file)
         print('0x{:>04x}'.format(address) + ":" + msg + ':'.join('{:02x}'.format(x) for x in rx), file=self.log_file,
               end=' ')
         if len(rx):
             print(':'.join('{:02x}'.format(x) for x in tx), file=self.log_file)
+
+    @staticmethod
+    def __draw_progressbar(percent, bar_len=20):
+        print("\r", end="")
+        print("[{:<{}}] {:.0f}% ".format("=" * int(bar_len * percent), bar_len, percent * 100), end="")
 
     def __errorexit(self, errormsg):
         print(self.txt_sep)
@@ -209,6 +255,7 @@ class CHflasher:
             print(self.txt_sep, file=self.log_file)
             print(errormsg, file=self.log_file)
             self.log_file.close()
+            self.close_port()
         sys.exit()
 
     def __get_bootkey(self, data_in, sn_sum):
@@ -230,21 +277,55 @@ class CHflasher:
             reply = (reply + self.bootkey[i]) & 0xff
         return reply
 
-    def __sendcmd(self, cmd):
-        self.epout.write(cmd)
-        b = self.epin.read(64)
+    def __sendcmd(self, cmd, reply_len):
+        # default port is USB
+        b = []
+        cmd = list(cmd)
+        if self.upload_port == "usb":
+            self.epout.write(cmd)
+            if reply_len:
+                b = self.epin.read(64)
+        else:  # using serial port
+            pkt_len = len(cmd) + 3  # 2 bytes preamble + checksum at the end
+            chks = 0
+            pkt = bytearray(pkt_len)
+            pkt[0] = 0x57  # preamble
+            pkt[1] = 0xab
+            pkt[2:] = cmd.copy()
+            for x in pkt[2:]:
+                chks = (chks + x) & 0xff
+            pkt.append(chks & 0xff)
+            self.ser.write(pkt)
+            if reply_len:
+                b = self.ser.read(reply_len+3)
+                if b and b[0] == 0x55 and b[1] == 0xaa:  # we got reply
+                    b = b[2:]  # remove preamble
+                    chks = 0
+                    for x in b[:-1]:
+                        chks = (chks + x) & 0xff  # calc checksum
+                    if chks != b[-1]:
+                        print("UART bootloader reply: checkusm error")
+                    else:
+                        b = b[:-1]  # remove last checksum
+                else:
+                    print("MCU UART not responding")
+                    print("Try to cycle the power with the PROG button held down.")
+                    print("UART Ports:")
+                    print("CH554: RXD1 = P1.6, TXD1 = P1.7")
+                    print("CH559: RXD  = P0.2, TXD  = P0.3")
+                    self.__errorexit("Bootloader not repsonding.")
         return b
 
     def __detect_bootloader_ver(self):
-        if self.bootloader_ver:                             # bootloader already detected
+        if self.bootloader_ver:  # bootloader already detected
             return
         ver = None
-        reply = self.__sendcmd(self.chip_v2["detect_seq"])
+        reply = self.__sendcmd(self.chip_v2["detect_seq"], 6)   # get 6 bytes reply
         if self.log_file is not None:
             print("Detecting bootloader version:", file=self.log_file)
             self.__print_buffers(self.chip_v2["detect_seq"], reply)
         if len(reply) == 0:
-            self.__errorexit('Bootloader detect: USB Error')
+            self.__errorexit('Bootloader detect: Comm Failed')
         if len(reply) == 2:
             ver = '1.1'
         else:
@@ -252,23 +333,23 @@ class CHflasher:
         return ver
 
     def __write_cfg_v2(self):
-        reply = self.__sendcmd(self.chip_v2["write_cfg"])
+        reply = self.__sendcmd(self.chip_v2["write_cfg"], 6)    # 6 bytes reply
         if self.log_file is not None:
             print(self.txt_sep, file=self.log_file)
             print("Write Config data:", file=self.log_file)
             self.__print_buffers(self.chip_v2["write_cfg"], reply)
 
     def __erasechipv1(self):
-        self.__sendcmd((0xa6, 0x04, 0x00, 0x00, 0x00, 0x00))
+        self.__sendcmd(self.chip_v1["erase_flash"], 6)
         for x in range(self.device_flash_size):
-            buffer = self.__sendcmd((0xa9, 0x02, 0x00, x*4))
+            buffer = self.__sendcmd((0xa9, 0x02, 0x00, x * 4), 6)
             if buffer[0] != 0x00:
                 self.__errorexit('Erase Failed')
         print('Flash Erased')
 
     def __erasechipv2(self):
         tx = (0xa4, 0x01, 0x00, self.device_erase_size)
-        reply = self.__sendcmd(tx)
+        reply = self.__sendcmd(tx, 6)
         if self.log_file is not None:
             print(self.txt_sep, file=self.log_file)
             print("Erasing flash:", file=self.log_file)
@@ -279,27 +360,26 @@ class CHflasher:
 
     def __exitbootloaderv1(self):
         print("Starting application...")
-        reply = self.epout.write(self.chip_v1["exit_bootloader"])
+        self.__sendcmd(self.chip_v1["exit_bootloader"], 0)  # no reply
         if self.log_file is not None:
             print(self.txt_sep, file=self.log_file)
             print("Starting application:", file=self.log_file)
-            self.__print_buffers(self.chip_v1["exit_bootloader"], reply)
+            self.__print_buffers(self.chip_v1["exit_bootloader"], "")
 
     def __exitbootloaderv2(self):
         print("Starting application...")
-        reply = self.epout.write(self.chip_v2["exit_bootloader"])
-        if reply is None:
-            reply = ""
+        # no reply here
+        self.__sendcmd(self.chip_v2["exit_bootloader"], 0)  # no reply
         if self.log_file is not None:
             print(self.txt_sep, file=self.log_file)
             print("Starting application:", file=self.log_file)
-            self.__print_buffers(self.chip_v2["exit_bootloader"], reply)
+            self.__print_buffers(self.chip_v2["exit_bootloader"], "")
 
     def __identchipv1(self):
-        reply = self.__sendcmd(self.chip_v1["detect_seq"])
+        reply = self.__sendcmd(self.chip_v1["detect_seq"], 2)
         if len(reply) == 2:
             self.chipid = reply[0]
-            print('Found CH5'+str(self.chipid-30))
+            print('Found CH5' + str(self.chipid - 30))
             if self.chipid == 0x58:
                 self.device_flash_size = 64
                 self.device_erase_size = 11
@@ -308,14 +388,14 @@ class CHflasher:
                 self.device_erase_size = 0x1d
         else:
             self.__errorexit('Unknown chip')
-        cfganswer = self.__sendcmd((0xbb, 0x00))
+        cfganswer = self.__sendcmd((0xbb, 0x00), 2)
         if len(cfganswer) == 2:
             print('Bootloader version: ' + str((cfganswer[0] >> 4)) + '.' + str((cfganswer[0] & 0xf)))
         else:
             self.__errorexit('Unknown bootloader')
 
     def __identchipv2(self):
-        reply = self.__sendcmd(self.chip_v2["detect_seq"])
+        reply = self.__sendcmd(self.chip_v2["detect_seq"], 6)
         if self.log_file is not None:
             print(self.txt_sep, file=self.log_file)
             print("Chip identification:", file=self.log_file)
@@ -323,7 +403,7 @@ class CHflasher:
         if len(reply) == 6:
             self.chipid = reply[4]
 
-            print('Found CH5'+str(self.chipid-30))
+            print('Found CH5' + str(self.chipid - 30))
             if self.chipid == 0x58:
                 self.device_flash_size = 64
                 # self.device_erase_size = 11
@@ -332,7 +412,7 @@ class CHflasher:
                 self.device_erase_size = 0x1d
         else:
             self.__errorexit('Unknown chip')
-        read_cfg_reply = self.__sendcmd(self.chip_v2["read_config"])
+        read_cfg_reply = self.__sendcmd(self.chip_v2["read_config"], 30)
 
         if self.log_file is not None:
             print(self.txt_sep, file=self.log_file)
@@ -345,22 +425,22 @@ class CHflasher:
         else:
             self.__errorexit('Unknown bootloader')
 
-        read_cfg_reply = self.__sendcmd(self.chip_v2["read_config"])
+        read_cfg_reply = self.__sendcmd(self.chip_v2["read_config"], 30)
         if self.log_file is not None:
             print(self.txt_sep, file=self.log_file)
             print("Config read:", file=self.log_file)
             self.__print_buffers(self.chip_v2["read_config"], read_cfg_reply)
 
     def __keyinputv2(self, cfganswer):
-        outbuffer = bytearray(64)
-        outbuffer[0] = 0xa3                 # command
-        outbuffer[1] = 0x30                 # length
-        outbuffer[2] = 0x00
-        checksum = sum(cfganswer[0x16:0x1a]) & 0xFF     # checksum from the reply of the read_config_data_cmd
+        outbuffer = bytearray()
+        outbuffer.append(0xa3)
+        outbuffer.append(0x30)
+        outbuffer.append(0x00)
+        checksum = sum(cfganswer[0x16:0x1a]) & 0xFF  # checksum from the reply of the read_config_data_cmd
         for x in range(0x30):
-            outbuffer[x+3] = rnd.randint(0x00, 0xff)                # generate random sequence
-        keygen_reply = self.__get_bootkey(outbuffer, checksum)      # calculate the key from the gen. random list
-        reply = self.__sendcmd(outbuffer)                           # write data over usb
+            outbuffer.append(rnd.randint(0x00, 0xff))  # generate random sequence
+        keygen_reply = self.__get_bootkey(outbuffer, checksum)  # calculate the key from the gen. random list
+        reply = self.__sendcmd(outbuffer, 6)  # write data
         if reply[4] != keygen_reply:
             print(self.txt_sep)
             print("KEY sum differs!!! calc = " + str(hex(keygen_reply)) + " received = " + str(hex(reply[4])))
@@ -378,7 +458,7 @@ class CHflasher:
         input_file = list(open(file_name, 'rb').read())
         bytes_to_send = len(input_file)
         if mode == self.chip_v1["mode_write"]:
-            print('Filesize: '+str(bytes_to_send)+' bytes')
+            print('Filesize: ' + str(bytes_to_send) + ' bytes')
         curr_addr = 0
         pkt_length = 0
         while curr_addr < len(input_file):
@@ -392,8 +472,8 @@ class CHflasher:
             outbuffer[2] = (curr_addr & 0xff)
             outbuffer[3] = ((curr_addr >> 8) & 0xff)
             for x in range(pkt_length):
-                outbuffer[x+4] = input_file[curr_addr+x]
-            buffer = self.__sendcmd(outbuffer)
+                outbuffer[x + 4] = input_file[curr_addr + x]
+            buffer = self.__sendcmd(outbuffer, 6)
             curr_addr += pkt_length
             bytes_to_send -= pkt_length
             if buffer is not None:
@@ -415,13 +495,13 @@ class CHflasher:
             if self.log_file is not None:
                 print(self.txt_sep, file=self.log_file)
                 print("Writing " + str(bytes_to_send) + " bytes to Flash.", file=self.log_file)
-                print("add=" + ' '*24 + '|'.join('{:02x}'.format(x) for x in range(64)),
+                print("add=" + ' ' * 24 + '|'.join('{:02x}'.format(x) for x in range(64)),
                       file=self.log_file)
         if mode == self.chip_v2["mode_verify"]:
             if self.log_file is not None:
                 print(self.txt_sep, file=self.log_file)
                 print("Veryfing " + str(bytes_to_send) + " bytes of Flash.", file=self.log_file)
-                print("add=" + ' '*24 + '|'.join('{:02x}'.format(x) for x in range(64)),
+                print("add=" + ' ' * 24 + '|'.join('{:02x}'.format(x) for x in range(64)),
                       file=self.log_file)
         if bytes_to_send < 256:
             self.__errorexit('Firmware bin file possibly corrupt.')
@@ -435,7 +515,7 @@ class CHflasher:
                 pkt_length = bytes_to_send
 
             outbuffer[0] = mode
-            outbuffer[1] = (pkt_length+5)
+            outbuffer[1] = (pkt_length + 5)
             outbuffer[2] = 0x00
             outbuffer[3] = (curr_addr & 0xff)
             outbuffer[4] = ((curr_addr >> 8) & 0xff)
@@ -444,22 +524,26 @@ class CHflasher:
             outbuffer[7] = bytes_to_send & 0xff
             # copy the bin data
             for x in range(pkt_length):
-                outbuffer[x+8] = input_file[curr_addr + x]
+                outbuffer[x + 8] = input_file[curr_addr + x]
             # ensure the bin image size is on 8 byte boundary
             while pkt_length % 8:
                 pkt_length = pkt_length + 1
-            outbuffer[1] = (pkt_length + 5)             # update the packet length
+            outbuffer[1] = (pkt_length + 5)  # update the packet length
             # xor the whole 0x38 long area with the bootkey
-            for x in range(0x38):
-                outbuffer[x + 8] = outbuffer[x+8] ^ self.bootkey[x & 0x07]
+            for x in range(pkt_length):
+                outbuffer[x + 8] = outbuffer[x + 8] ^ self.bootkey[x & 0x07]
+            outbuffer = outbuffer[:pkt_length+8]    # trim the last packet
 
-            buffer = self.__sendcmd(outbuffer)
+            buffer = self.__sendcmd(outbuffer, 6)
+
             # --- logger ---
             if self.log_file is not None:
-                self.__print_buffer_errors(input_file[curr_addr:curr_addr+pkt_length], outbuffer, buffer, curr_addr)
+                self.__print_buffer_errors(input_file[curr_addr:curr_addr + pkt_length], outbuffer, buffer, curr_addr)
 
             curr_addr += pkt_length
             bytes_to_send -= pkt_length
+            self.__draw_progressbar(curr_addr/len(input_file))
+
             if buffer is not None:
                 if buffer[4] != 0x00 and buffer[4] != 0xfe:
                     if mode == self.chip_v2["mode_write"]:
@@ -477,7 +561,6 @@ class CHflasher:
 
     # Write: full service: write the flash, verify and exit the bootloaer
     def write(self, firmware_bin):
-        self.__init_usb()
         bt_version = self.__detect_bootloader_ver()
         if bt_version == '1.1':
             self.__identchipv1()
@@ -494,7 +577,6 @@ class CHflasher:
             self.__exitbootloaderv2()
 
     def verify(self, firmware_bin):
-        self.__init_usb()
         bt_version = self.__detect_bootloader_ver()
         if bt_version == '1.1':
             self.__identchipv1()
@@ -507,7 +589,6 @@ class CHflasher:
 
     # erase: stay in bootloader mode?
     def erase(self):
-        self.__init_usb()
         bt_version = self.__detect_bootloader_ver()
         if bt_version == '1.1':
             self.__identchipv1()
@@ -517,7 +598,6 @@ class CHflasher:
             self.__erasechipv2()
 
     def detect(self):
-        self.__init_usb()
         bt_version = self.__detect_bootloader_ver()
         if bt_version == '1.1':
             self.__identchipv1()
@@ -525,12 +605,13 @@ class CHflasher:
             self.__identchipv2()
 
     def start_app(self):
-        self.__init_usb()
         bt_version = self.__detect_bootloader_ver()
         if bt_version == '1.1':
             self.__exitbootloaderv1()
         if bt_version == '2.3':
             self.__exitbootloaderv2()
+
+
 # ---------------------------------------------------------------------------------
 
 
@@ -538,15 +619,19 @@ def __main(argv, flash):
     parser = argparse.ArgumentParser(description="CH55x USB bootloader flash tool.",
                                      epilog=flash.example_text,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--version',  action='store_true', help="Show version.")
+    parser.add_argument('--version', action='store_true', help="Show version.")
+    parser.add_argument('-p', '--port', type=str, default='', help='serial port')
     parser.add_argument('-f', '--file', type=str, default='', help="The target file to be flashed.")
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument('-w', '--write', action='store_true', default=False, help="Write file to flash, verify and exit"
-                                                                                 " the bootloader")
-    group.add_argument('-v', '--verify', action='store_true', default=False,  help="Verify flash against the"
-                                                                                   " provided file.")
-    group.add_argument('-d', '--detect', action='store_true', default=False, help="Detect chip and bootloader version.")
-    group.add_argument('-e', '--erase', action='store_true', default=False, help="Erase flash.")
+
+    oper_group = parser.add_mutually_exclusive_group()
+    oper_group.add_argument('-w', '--write', action='store_true', default=False, help="Write file to flash, verify and "
+                                                                                      "exit the bootloader")
+    oper_group.add_argument('-v', '--verify', action='store_true', default=False, help="Verify flash against the"
+                                                                                       " provided file.")
+    oper_group.add_argument('-d', '--detect', action='store_true', default=False, help="Detect chip and bootloader "
+                                                                                       "version.")
+    oper_group.add_argument('-e', '--erase', action='store_true', default=False, help="Erase flash.")
+
     parser.add_argument('-s', '--start_app', action='store_true', default=False, help="Reset and start application.")
     parser.add_argument('--log', type=str, default=None, help="Log usb opeations to file.")
 
@@ -557,9 +642,15 @@ def __main(argv, flash):
     args = parser.parse_args()
 
     firmware_bin = None
+    upload_port = "usb"
 
     if args.version:
         flash.show_info()
+    if args.port:
+        upload_port = args.port
+    # choose default usb of serial if provided
+    flash.init_port(upload_port)
+
     if args.log:
         flash.set_logger(True, args.log)
     if args.file:
@@ -578,16 +669,15 @@ def __main(argv, flash):
         flash.erase()
     if args.start_app:
         flash.start_app()
-    if args.detect:
-        flash.detect()
 
     # close log file if used
     flash.close_logger()
+    flash.close_port()
+
+
 # ---------------------------------------------------------------------------------
 
 
 if __name__ == "__main__":
-
     flasher = CHflasher()
     __main(sys.argv[1:], flasher)
-
