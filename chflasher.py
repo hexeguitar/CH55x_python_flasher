@@ -503,7 +503,7 @@ class CHflasher:
                 print("Veryfing " + str(bytes_to_send) + " bytes of Flash.", file=self.log_file)
                 print("add=" + ' ' * 24 + '|'.join('{:02x}'.format(x) for x in range(64)),
                       file=self.log_file)
-        if bytes_to_send < 256:
+                if bytes_to_send < 32:
             self.__errorexit('Firmware bin file possibly corrupt.')
         curr_addr = 0
         pkt_length = 0
