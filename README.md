@@ -13,8 +13,14 @@ ___
 1.0 Initial version
 
 ___
+### 10.2020 UPDATE:  
+Succesfull tests:
+- CH552 using bootloader v. 2.4, USB only
+
+___
 ### 03.2020 UPDATE:  
 Succesfull tests:
+
 - CH559, CH554 using bootloader v. 2.31, both USB and UART
 - CH551 using bootloader v. 1.1, USB only
 
