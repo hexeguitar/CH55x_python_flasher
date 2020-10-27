@@ -66,11 +66,11 @@ ___
 
 write, verify the blink.bin file and exit the bootloader:  
 
-```python3 chflasher.py -w -f blink.bin```  
+```python3 chflasher.py -w -f blink.bin -s```  
 
 write, verify the blink bin file and exit the bootloader, log operations in the write.log file:
 
-```python3 chflasher.py -w -f blink.bin --log write.log```  
+```python3 chflasher.py -w -f blink.bin -s --log write.log```  
 
 verify the flash against the blink.bin file:  
 
