@@ -504,7 +504,7 @@ class CHflasher:
                 print("add=" + ' ' * 24 + '|'.join('{:02x}'.format(x) for x in range(64)),
                       file=self.log_file)
                 if bytes_to_send < 32:
-            self.__errorexit('Firmware bin file possibly corrupt.')
+                    self.__errorexit('Firmware bin file possibly corrupt.')
         curr_addr = 0
         pkt_length = 0
         while curr_addr < len(input_file):
