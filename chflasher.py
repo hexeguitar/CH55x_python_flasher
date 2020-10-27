@@ -567,25 +567,25 @@ class CHflasher:
             self.__erasechipv1()
             self.__writefilev1(firmware_bin, self.chip_v1["mode_write"])
             self.__writefilev1(firmware_bin, self.chip_v1["mode_verify"])
-            self.__exitbootloaderv1()
+
 
         if bt_version == '2.3':
             self.__identchipv2()
             self.__erasechipv2()
             self.__writefilev2(firmware_bin, self.chip_v2["mode_write"])
             self.__writefilev2(firmware_bin, self.chip_v2["mode_verify"])
-            self.__exitbootloaderv2()
+
 
     def verify(self, firmware_bin):
         bt_version = self.__detect_bootloader_ver()
         if bt_version == '1.1':
             self.__identchipv1()
             self.__writefilev1(firmware_bin, self.chip_v1["mode_verify"])
-            self.__exitbootloaderv1()
+
         if bt_version == '2.3':
             self.__identchipv2()
             self.__writefilev2(firmware_bin, self.chip_v2["mode_verify"])
-            self.__exitbootloaderv2()
+
 
     # erase: stay in bootloader mode?
     def erase(self):
