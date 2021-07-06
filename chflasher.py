@@ -409,7 +409,7 @@ class CHflasher:
                 # self.device_erase_size = 11
             elif self.chipid == 0x59:
                 self.device_flash_size = 64
-                self.device_erase_size = 0x1d
+                self.device_erase_size = 60
         else:
             self.__errorexit('Unknown chip')
         read_cfg_reply = self.__sendcmd(self.chip_v2["read_config"], 30)
