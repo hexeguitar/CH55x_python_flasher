@@ -8,7 +8,7 @@ This script is based on work done by:
 
 ___
 ### Changelog:
-2.2 Fixed flash/erase block ranges, added udev install script.
+2.2 Fixed flash/erase block ranges, bargraph, added udev install script.  
 2.1 Added serial port option for bootloader v.2.31 + hardware reboot into bootloader.  
 2.0 Fixed flashing algorithm for bootloader v.2.31  
 1.0 Initial version
@@ -22,12 +22,12 @@ ___
 ### 03.2020 UPDATE:  
 Succesfull tests:
 
-- CH559, CH554 using bootloader v. 2.31, both USB and UART
-- CH551 using bootloader v. 1.1, USB only
+- CH559, CH554 using bootloader v. 2.31, both USB and UART  
+- CH551 using bootloader v. 1.1, USB only  
 
 ___
 ### TODO:
-1. Implement programming via UART - done for bootloader v. 2.31
+1. Implement programming via UART - done for bootloader v. 2.31  
 2. Test more MCUs.   
 3. Test version 1 of the bootloader.  
     
@@ -111,5 +111,5 @@ or in Windows:
 
 ___
 
-Copyright 03.2021 by Piotr Zapart  
+Copyright 07.2021 by Piotr Zapart  
 www.hexefx.com
