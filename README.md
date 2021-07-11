@@ -8,6 +8,7 @@ This script is based on work done by:
 
 ___
 ### Changelog:
+2.2 Fixed flash/erase block ranges, added udev install script.
 2.1 Added serial port option for bootloader v.2.31 + hardware reboot into bootloader.  
 2.0 Fixed flashing algorithm for bootloader v.2.31  
 1.0 Initial version
@@ -110,5 +111,5 @@ or in Windows:
 
 ___
 
-Copyright 03.2020 by Piotr Zapart  
+Copyright 03.2021 by Piotr Zapart  
 www.hexefx.com

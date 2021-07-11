@@ -1,44 +1,51 @@
 #!/usr/bin/env python3
+"""
+this tool can flash the CH55x series with bootloader version 1.1 and 2.31
+usage:
 
-# this tool can flash the CH55x series with bootloader version 1.1 and 2.31
-# usage:
+to check if the chip is detected and see the bootloader version:
+python3 chflasher.py -d
 
-# to check if the chip is detected and see the bootloader version:
-# python3 chflasher.py -d
+to flash an example blink.bin file:
+python3 chflasher.py -w -i blink.bin
 
-# to flash an example blink.bin file:
-# python3 chflasher.py -w -i blink.bin
+to erase the flash:
+python3 chflasher.py -e
 
-# to erase the flash:
-# python3 chflasher.py -e
+to verify the flash against the blink.bin file
+python3 chflasher.py -v -i blink.bin
 
-# to verify the flash against the blink.bin file
-# python3 chflasher.py -v -i blink.bin
+In addition, a log of usb tx and rx packets can be written for all operations, simply add --log option:
+python3 chflasher.py --log=<logfilename> -w -i blink.bin
 
-# In addition, a log of usb tx and rx packets can be written for all operations, simply add --log option:
-# python3 chflasher.py --log=<logfilename> -w -i blink.bin
+support for: CH551, CH552, CH554, CH558 and CH559
 
-# support for: CH551, CH552, CH554, CH558 and CH559
+Copyright by https://ATCnetz.de (Aaron Christophel) you can edit and use this code as you want if you mention me :)
 
-# Copyright by https://ATCnetz.de (Aaron Christophel) you can edit and use this code as you want if you mention me :)
+now works with Python 2.7 or Python 3 thanks to adlerweb
+you need to install pyusb to use this flasher install it via pip install pyusb
+on linux run: sudo apt-get install python-pip and sudo pip install pyusb
+on windows you need the zadig tool https://zadig.akeo.ie/ to install the right driver
+click on Options and List all devices to show the USB Module, then install the libusb-win32 driver
 
-# now works with Python 2.7 or Python 3 thanks to adlerweb
-# you need to install pyusb to use this flasher install it via pip install pyusb
-# on linux run: sudo apt-get install python-pip and sudo pip install pyusb
-# on windows you need the zadig tool https://zadig.akeo.ie/ to install the right driver
-# click on Options and List all devices to show the USB Module, then install the libusb-win32 driver
+Rewritten and upgraded by Piotr Zapart / www.hexefx.com on Jan/Feb 2020
+things changed / added:
+1. Moved all funtcions into a class and restructured the code, fixed pycharm warnings
+2. Added __name__ test condition
+3. Added help and info options
+4. Added options to detect the chip, erase or verify the flash only
+5. Optional usb data logging: use the option --log. It will create a
+   new log file with all the usb operations logged.
+6. Changed the bootkey generator to work as (almost) in the original WCH app
+7. Fixed the flash verify issue for larger bin files
 
-# Rewritten and upgraded by Piotr Zapart / www.hexefx.com on Jan/Feb 2020
-# things changed / added:
-# 1. Moved all funtcions into a class and restructured the code, fixed pycharm warnings
-# 2. Added __name__ test condition
-# 3. Added help and info options
-# 4. Added options to detect the chip, erase or verify the flash only
-# 5. Optional usb data logging: use the option --log. It will create a
-#    new log file with all the usb operations logged.
-# 6. Changed the bootkey generator to work as (almost) in the original WCH app
-# 7. Fixed the flash verify issue for larger bin files
-
+07.2021 -- more fixes && updates:
+1. Fixed wrong flash erase size for ch559 (thanks toyoshim)
+2. Move the flash size configuration for all supported MCUs to a dictionary
+3. Added check for supported MCU type
+4. Argparse checks if bin file is provided for write or verify
+5. Fixed bargraph progress showing >100%
+"""
 
 import usb.core
 import usb.util
@@ -73,12 +80,42 @@ class CHflasher:
         "write_cfg": (0xa8, 0x0e, 0x00, 0x07, 0x00, 0xff, 0xff, 0xff, 0xff, 0x03, 0x00, 0x00, 0x00, 0xff,
                       0x4e, 0x00, 0x00)
     }
+    # supported chips
+    chip_sup = (0x51, 0x52, 0x53, 0x54, 0x58, 0x59)
+
+    chip_defs = {
+        "CH551": {   "flash_blocks": 10,
+                    "erase_blocks": 10,
+                    "boot_addr":    0x3800
+        },
+        "CH552": {   "flash_blocks": 16,
+                    "erase_blocks": 14,
+                    "boot_addr":    0x3800
+        },
+        "CH553": {   "flash_blocks": 10,
+                    "erase_blocks": 10,
+                    "boot_addr":    0x3800
+        },
+        "CH554": {   "flash_blocks": 16,
+                    "erase_blocks": 14,
+                    "boot_addr":    0x3800
+        },
+        "CH558": {   "flash_blocks": 40,
+                    "erase_blocks": 32,
+                    "boot_addr":    0xF400
+        },
+        "CH559": {   "flash_blocks": 64,
+                    "erase_blocks": 60,
+                    "boot_addr":    0xF400
+        }
+    }
     txt_sep = '---------------------------------------------------------------------------------'
-    version = '2.1'
+    version = '2.2'
 
     device_erase_size = 8
     device_flash_size = 16
     chipid = 0
+    chip_symbol = ""
     log_file = None
     bootloader_ver = None
     bootkey = [0] * 8  # bootkey placeholder
@@ -181,10 +218,11 @@ class CHflasher:
     def show_info(cls):
         print(cls.txt_sep)
         print("CH55x USB bootloader flash tool, version " + cls.version)
+        print("Copyright 2021 by Piotr Zapart www.hexefx.com")
         print("Based on work by https://ATCnetz.de (Aaron Christophel)")
-        print("Copyright 2020 by Piotr Zapart www.hexefx.com")
         print("Supported chips: CH551, CH552, CH554, CH558 and CH559")
         print(cls.txt_sep)
+        exit(0)
 
     def show_version(self):
         print("version " + self.version)
@@ -341,7 +379,7 @@ class CHflasher:
 
     def __erasechipv1(self):
         self.__sendcmd(self.chip_v1["erase_flash"], 6)
-        for x in range(self.device_flash_size):
+        for x in range(self.device_erase_size):
             buffer = self.__sendcmd((0xa9, 0x02, 0x00, x * 4), 6)
             if buffer[0] != 0x00:
                 self.__errorexit('Erase Failed')
@@ -379,13 +417,13 @@ class CHflasher:
         reply = self.__sendcmd(self.chip_v1["detect_seq"], 2)
         if len(reply) == 2:
             self.chipid = reply[0]
-            print('Found CH5' + str(self.chipid - 30))
-            if self.chipid == 0x58:
-                self.device_flash_size = 64
-                self.device_erase_size = 11
-            elif self.chipid == 0x59:
-                self.device_flash_size = 64
-                self.device_erase_size = 0x1d
+            self.chip_symbol = 'CH5'+ str(self.chipid - 30)
+            print('Found ' + self.chip_symbol)
+            if self.chipid in self.chip_sup:
+                self.device_flash_size = self.chip_defs[self.chip_symbol]["flash_blocks"]
+                self.device_erase_size = self.chip_defs[self.chip_symbol]["erase_blocks"]
+                print(f'Flash size: {self.device_flash_size} blocks, {self.device_flash_size * 1024} bytes.')
+                print(f'Reserved for application: {self.device_erase_size} blocks, {self.device_erase_size * 1024} bytes.')
         else:
             self.__errorexit('Unknown chip')
         cfganswer = self.__sendcmd((0xbb, 0x00), 2)
@@ -402,16 +440,17 @@ class CHflasher:
             self.__print_buffers(self.chip_v2["detect_seq"], reply)
         if len(reply) == 6:
             self.chipid = reply[4]
-
-            print('Found CH5' + str(self.chipid - 30))
-            if self.chipid == 0x58:
-                self.device_flash_size = 64
-                # self.device_erase_size = 11
-            elif self.chipid == 0x59:
-                self.device_flash_size = 64
-                self.device_erase_size = 60
+            self.chip_symbol = 'CH5' + str(self.chipid - 30)
+            print('Found ' + self.chip_symbol)
+            if self.chipid in self.chip_sup:
+                self.device_flash_size = self.chip_defs[self.chip_symbol]["flash_blocks"]
+                self.device_erase_size = self.chip_defs[self.chip_symbol]["erase_blocks"]
+                print(f'Flash size: {self.device_flash_size} blocks, {self.device_flash_size * 1024} bytes.')
+                print(f'Reserved for application: {self.device_erase_size} blocks, {self.device_erase_size * 1024} bytes.')
+            else:
+                self.__errorexit('Chip not supported!')
         else:
-            self.__errorexit('Unknown chip')
+            self.__errorexit('Unknown chip!')
         read_cfg_reply = self.__sendcmd(self.chip_v2["read_config"], 30)
 
         if self.log_file is not None:
@@ -507,7 +546,12 @@ class CHflasher:
                     self.__errorexit('Firmware bin file possibly corrupt.')
         curr_addr = 0
         pkt_length = 0
-        while curr_addr < len(input_file):
+        # make the file length to be on 8 bytes boundary
+        len_bound = len(input_file)
+        while len_bound % 8:
+            len_bound = len_bound + 1
+
+        while curr_addr < len_bound:
             outbuffer = bytearray(64)
             if bytes_to_send >= 0x38:
                 pkt_length = 0x38
@@ -525,7 +569,7 @@ class CHflasher:
             # copy the bin data
             for x in range(pkt_length):
                 outbuffer[x + 8] = input_file[curr_addr + x]
-            # ensure the bin image size is on 8 byte boundary
+            # ensure the bin image size is on 8 bytes boundary
             while pkt_length % 8:
                 pkt_length = pkt_length + 1
             outbuffer[1] = (pkt_length + 5)  # update the packet length
@@ -542,7 +586,8 @@ class CHflasher:
 
             curr_addr += pkt_length
             bytes_to_send -= pkt_length
-            self.__draw_progressbar(curr_addr/len(input_file))
+
+            self.__draw_progressbar(curr_addr / len_bound)
 
             if buffer is not None:
                 if buffer[4] != 0x00 and buffer[4] != 0xfe:
@@ -567,7 +612,6 @@ class CHflasher:
             self.__erasechipv1()
             self.__writefilev1(firmware_bin, self.chip_v1["mode_write"])
             self.__writefilev1(firmware_bin, self.chip_v1["mode_verify"])
-
 
         if bt_version == '2.3':
             self.__identchipv2()
@@ -660,9 +704,20 @@ def __main(argv, flash):
             print("File not found")
             sys.exit(2)
     if args.write:
-        flash.write(firmware_bin)
+        if firmware_bin:
+            flash.write(firmware_bin)
+        else:
+            print("Please provide the firmware file!!!")
+            parser.print_help(sys.stderr)
+            sys.exit(1)
+
     if args.verify:
-        flash.verify(firmware_bin)
+        if firmware_bin:
+            flash.verify(firmware_bin)
+        else:
+            print("Please provide the firmware file!!!")
+            parser.print_help(sys.stderr)
+            sys.exit(1)
     if args.detect:
         flash.detect()
     if args.erase:
