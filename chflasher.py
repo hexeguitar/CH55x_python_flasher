@@ -140,9 +140,11 @@ class CHflasher:
                 dev.detach_kernel_driver(0)
             dev.set_configuration()
         except usb.core.USBError as ex:
-            print('Could not access USB Device')
-
-            if str(ex).startswith('[Errno 13]') and platform.system() == 'Linux':
+            if str(ex).startswith('[Errno 2]') and platform.system() == 'Darwin':
+                # Recent mac fails with the error 'Entity not found'.
+                # It just works to continue with set_configuration forcibly.
+                dev.set_configuration()
+            elif str(ex).startswith('[Errno 13]') and platform.system() == 'Linux':
                 print('No access to USB Device, configure udev or execute as root (sudo)')
                 print('For udev create /etc/udev/rules.d/99-ch55x.rules')
                 print('with one line:')
@@ -154,9 +156,10 @@ class CHflasher:
                 print('Alternativey use the included script:')
                 print('sudo ./linux_ch55x_install_udev_rules.sh')
                 sys.exit(2)
-
-            traceback.print_exc()
-            sys.exit(2)
+            else:
+                print('Could not access USB Device')
+                traceback.print_exc()
+                sys.exit(2)
         cfg = dev.get_active_configuration()
         intf = cfg[(0, 0)]
         self.epout = usb.util.find_descriptor(intf, custom_match=lambda e: usb.util.endpoint_direction(
